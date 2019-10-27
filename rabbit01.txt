@@ -1,0 +1,82 @@
+npm install amqplib
+=====================================================
+=====================================================
+=====================================================
+=====================================================
+=====================================================
+=====================================================
+
+Hello World //one-to-one send & receive 
+===========   no storage/forward system (message can be missed)
+The simplest thing that does something
+
+
+----------------------------
+send.js
+
+//declare dependency
+        var amqp = require('amqplib/callback_api');
+
+//creat connect with amqp
+        amqp.connect('amqp://localhost', function(error0, connection) {
+                if (error0) {
+                        throw error0;
+                }
+
+//create channel
+        connection.createChannel(function(error1, channel) {
+                if (error1) {
+                        throw error1;
+                }
+//declare queue
+                var queue = 'hello';           //if already exist , it will no re create
+                var msg = 'Hello World!';
+
+//assert queue
+                channel.assertQueue(queue, {
+                        durable: false
+                });
+//send to queue
+                channel.sendToQueue(queue, Buffer.from(msg));
+
+                console.log(" [x] Sent %s", msg);
+        });
+        setTimeout(function() {
+                connection.close();
+                process.exit(0);
+        }, 500);
+        });
+
+--------------------------
+receive.js
+
+//declare dependency
+        var amqp = require('amqplib/callback_api');
+
+//creat connect with amqp
+        amqp.connect('amqp://localhost', function(error0, connection) {
+        if (error0) {
+                throw error0;
+        }
+
+//create channel        
+        connection.createChannel(function(error1, channel) {
+                if (error1) {
+                        throw error1;
+                }
+//declare queue
+                var queue = 'hello';
+//assert queue
+                channel.assertQueue(queue, {
+                        durable: false
+                });
+
+                console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
+//consume queue
+                channel.consume(queue, function(msg) {
+                        console.log(" [x] Received %s", msg.content.toString());
+                }, {
+                noAck: true
+                });
+        });
+        });

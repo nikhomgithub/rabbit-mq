@@ -1,0 +1,10 @@
+/dockerrabit/client/node_modules
+/dockerrabit/RabbitMQ-Docker-cluster/node_modules
+/dockerrabit/rest-req-res/node_modules
+/microservice_rabbit_mq/node_modules
+/oldone/node_modules
+/p01/receive/node_modules
+/p01/send/node_modules
+
+receive/node_modules
+send/node_modules

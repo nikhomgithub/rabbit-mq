@@ -1,0 +1,129 @@
+Remote procedure call (RPC)
+    // communication between 2 machine
+    // A client sends a request message with 'callback' queue address (unique value)
+    // server replies with a response message. 
+
+RPC in deep
+    // When the Client starts up, it create callback queue
+    // Client sends a message with two properties: 
+            reply_to: callback queue
+            correlation_id: nique value for every request
+
+    // request is sent to an rpc_queue queue.
+    // RPC server wait, accet request
+    // RPC server send bac result, with reply_to:callback queue
+    // The client waits for data on the callback queue
+    // message appears, it checks the correlation_id
+
+-------------------------------
+rpc_client.js
+
+//declare dependency
+            var amqp = require('amqplib/callback_api');
+
+            var args = process.argv.slice(2);
+
+            if (args.length == 0) {
+                console.log("Usage: rpc_client.js num");
+                process.exit(1);
+            }
+//create connect
+            amqp.connect('amqp://localhost', function(error0, connection) {
+                    if (error0) {
+                        throw error0;
+                    }
+//create channel                    
+                    connection.createChannel(function(error1, channel) {
+                        if (error1) {
+                            throw error1;
+                        }
+//assert queue
+                        channel.assertQueue('', {
+                            exclusive: true
+                            }, function(error2, q) {
+                                if (error2) {
+                                    throw error2;
+                                }
+
+                        var correlationId = generateUuid();
+                        var num = parseInt(args[0]);
+
+                        console.log(' [x] Requesting fib(%d)', num);
+
+//consume as get back res
+//check correlationId 
+                        channel.consume(q.queue, function(msg) {
+                            if (msg.properties.correlationId == correlationId) {
+                                console.log(' [.] Got %s', msg.content.toString());
+                                setTimeout(function() { 
+                                    connection.close(); 
+                                    process.exit(0) 
+                            }, 500);
+                            }
+                        }, {
+                            noAck: true
+                        });
+
+//send to queue with 'rpc_queue',replyTo,correlationId
+                        channel.sendToQueue('rpc_queue',
+                            Buffer.from(num.toString()),{ 
+                            correlationId: correlationId, 
+                            replyTo: q.queue });
+                        });
+            });
+            });
+
+            function generateUuid() {
+            return Math.random().toString() +
+                    Math.random().toString() +
+                    Math.random().toString();
+            }
+-------------------------------
+ rpc_server.js
+ 
+//declare dependency 
+            var amqp = require('amqplib/callback_api');
+//create connect
+            amqp.connect('amqp://localhost', function(error0, connection) {
+            if (error0) {
+                throw error0;
+            }
+//create channel            
+            connection.createChannel(function(error1, channel) {
+                if (error1) {
+                    throw error1;
+                }
+                var queue = 'rpc_queue';
+//assert queue
+                channel.assertQueue(queue, {
+                    durable: false
+                });
+
+//Don't dispatch a new message to a worker until it has processed and acknowledged the previous one                
+//Instead, it will dispatch it to the next worker that is not still busy
+                channel.prefetch(1);
+                console.log(' [x] Awaiting RPC requests');
+
+                channel.consume(queue, function reply(msg) {
+                    var n = parseInt(msg.content.toString());
+
+                    console.log(" [.] fib(%d)", n);
+
+                    var r = fibonacci(n);
+
+                    channel.sendToQueue(msg.properties.replyTo,
+                        Buffer.from(r.toString()), {
+                        correlationId: msg.properties.correlationId
+                        });
+
+                    channel.ack(msg);
+                    });
+            });
+            });
+
+            function fibonacci(n) {
+            if (n == 0 || n == 1)
+                return n;
+            else
+                return fibonacci(n - 1) + fibonacci(n - 2);
+            }

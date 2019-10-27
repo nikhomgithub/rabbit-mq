@@ -1,0 +1,129 @@
+there are 
+  -send
+  -receive
+
+require('amqplib/callback_api')
+protocal 
+  amqp://localhost
+  
+  receive => createChannel , queue, wait to comsume queue,message
+  send => createChannel, queue, send message  , channel close after send()
+
+==================================================
+==================================================
+==================================================
+https://www.rabbitmq.com/tutorials/tutorial-one-javascript.html
+==================================================
+named queue
+
+Producing   ===>   queue     ===>   Consuming
+Send                                Receive
+Pub                                 Sub  
+
+---------------------------------------------
+send.js
+
+var amqp = require('amqplib/callback_api');
+
+amqp.connect('amqp://localhost', function(error0, connection) {           //connection
+    if (error0) {
+        throw error0;
+    }
+    connection.createChannel(function(error1, channel) {
+        if (error1) {
+            throw error1;
+        }
+
+        var queue = 'hello';                                //Topic
+        var msg = 'Hello World!';                           //Message
+
+        channel.assertQueue(queue, {
+            durable: false
+        });
+        channel.sendToQueue(queue, Buffer.from(msg));
+
+        console.log(" [x] Sent %s", msg);
+    });
+    setTimeout(function() {
+        connection.close();
+        process.exit(0);
+    }, 500);
+});
+
+==================================================
+==================================================
+receive.js
+
+var amqp = require('amqplib/callback_api');
+
+amqp.connect('amqp://localhost', function(error0, connection) {
+  if (error0) {
+    throw error0;
+  }
+  connection.createChannel(function(error1, channel) {
+    if (error1) {
+      throw error1;
+    }
+    
+    var queue = 'hello';                                 //Topic
+
+    channel.assertQueue(queue, {
+      durable: false
+    });
+  });
+});
+
+================================================
+at server
+Listing queues // see what queues RabbitMQ has 
+
+sudo rabbitmqctl list_queues
+
+==================================================
+==================================================
+==================================================
+https://www.rabbitmq.com/tutorials/tutorial-two-javascript.html
+==================================================
+Work Queues 
+//Good for  complicated task (like images to be resized / pdf files to be rendered )
+ 
+new_task.js  (send) 
+
+var queue = 'task_queue';
+var msg = process.argv.slice(2).join(' ') || "Hello World!";
+
+channel.assertQueue(queue, {
+  durable: true
+});
+
+channel.sendToQueue(queue, Buffer.from(msg), {
+  persistent: true
+});
+
+console.log(" [x] Sent '%s'", msg);
+------------------------------
+worker.js (receive)
+channel.assertQueue(queue, {
+  durable: true
+});
+
+channel.consume(queue, function(msg) {
+  var secs = msg.content.toString().split('.').length - 1;
+
+  console.log(" [x] Received %s", msg.content.toString());
+  setTimeout(function() {
+    console.log(" [x] Done");
+  }, secs * 1000);
+}, {
+  // automatic acknowledgment mode,
+  // see https://www.rabbitmq.com/confirms.html for details
+  noAck: true
+});
+--------------------------------
+# shell 1
+./worker.js
+# shell 2
+./new_task.js
+
+========================================
+=======================================

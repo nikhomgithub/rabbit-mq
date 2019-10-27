@@ -1,0 +1,78 @@
+01  // hello world // one-to-one send & receive
+send
+    connection -> channel -> assertQueue ('hello') -> sendToQueue(msg) 
+receive
+    connection -> channel -> assertQueue ('hello') -> consume ('hello', noAck)
+
+
+02 // work queue // one-to-one with storage/forward/ack system 
+send 
+    connection -> channel -> assertQueue ('task_queue',durable ) -> sendToQueue (persistent, msg)
+receive
+    connection -> channel -> assertQueue ('task_queue',durable ) -> prefetch(1) -> consume('task_queue',Ack)
+
+
+03 // pub-sub // braodcast a message to multiple consumers.
+send
+    connection -> channel -> assertExchange ('logs', 'fanout' ) ->  publish ('logs')
+receive 
+    connection -> channel -> assertExchange ('logs', 'fanout' ) ->  assertQueue('') -> bindQueue('', 'logs', '')-> consume('')
+
+
+04 // Routing // message direct with binding key === routing key
+send
+    connection -> channel -> assertExchange('direct_logs', 'direct') -> publish ('direct_logs', severity, msg)
+receive 
+    connection -> channel -> assertExchange('direct_logs', 'direct') -> assertQueue('') -> bindQueue ('','direct_logs', severity ) -> consume ('')
+
+
+05 // Topic // routing based on multiple criteria
+send 
+    connection -> channel -> assertExchange('topic_logs', 'topic') -> assertExchange('topic_logs', 'topic') -> publish('topic_logs', key, msg)
+receive
+    connection -> channel -> assertExchange('topic_logs', 'topic') -> assertQueue('') -> bindQueue('', 'topic_logs', key) -> consume ('')
+
+06 // rcp // communication between 2 machine
+send
+    connection -> channel -> assertQueue('') -> sendToQueue('rpc_queue',correlationId,replyTo:q.queue) 
+receive
+    connection -> channel -> assertQueue('rpc_queue') -> prefetch(1) -> consume () ->  sendToQueue (correlationId,replyTo,ack)                              
+send                                           
+                                             -> consume(correlationId)
+==================================
+==================================
+microservice_rabbit_mq/node_mq.txt
+
+----------------------------------
+client =post=> webService =publish=> ampqCloud => ProcessorService
+
+
+---------------------
+setup RabbitMQ server
+    connection -> channel -> assertExchange("processing","direct") 
+               => assertQueue('"processing.requests") => bindQueue("processing.requests","processing","request")
+               => assertQueue("processing.results") => bindQueue("processing.results","processing","result")
+
+----------
+webService 
+    server.listen(PORT, "localhost",()=>{})
+
+    app.post('/api/v1/processData') 
+        -req-> connection(string) -> channel(createConfirmChannel)
+            -> publish (channel, { routingKey="request", exchangeName="processing", data =  { requestId, req.body.data }})  
+        -res-> res.send({ requestId })
+
+    //listenForResults();
+    connection->channel->prefetch(1)->consume("processing.results")->ack(msg)
+
+--------------------
+processor-service.js
+listenForMessages
+
+    connection->channel,resultsChannel->prefetch(1)-> consume(channel,resultsChannel)
+              
+              ->publish(exchangeName="processing", routingKey="result", data:{requestId,processingResults}->ack(msg)
+
+======================================================
+======================================================
+======================================================

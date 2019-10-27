@@ -1,0 +1,25 @@
+To run this project check listening project
+docker rm $(docker ps -aq) -f   //remove all container
+
+$sudo -s              //become a root
+$netstat -tln         //to see listening port
+$lsof -i:15672        //to see PID of listing port
+$kill 1752            //to kill thoe pid
+
+0.0.0.0:5672          //mean for client connect
+0.0.0.0:15672         //mean management page
+0.0.0.0:25672         //mean clustering port for internal interface
+
+docker network ls
+docker network rm rabbitmq-cluster       //remove network
+docker network create rabbitmq-cluster   //create network
+
+docker-compose up -d
+
+  connect     Connect a contaRabbiner to a network
+  create      Create a network
+  disconnect  Disconnect a container from a network
+  inspect     Display detailed information on one or more networks
+  ls          List networks
+  prune       Remove all unused networks
+  rm          Remove one or more networks

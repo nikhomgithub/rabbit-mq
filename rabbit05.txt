@@ -1,0 +1,104 @@
+Topics
+// routing based on multiple criteria
+// # 0 or more binding key
+// * 1 or more binding key
+
+emit_log_topic.js
+
+//create connect   
+        amqp.connect('amqp://localhost', function(error0, connection) {
+                if (error0) {
+                    throw error0;
+                }
+//create channel            
+            connection.createChannel(function(error1, channel) {
+                if (error1) {
+                    throw error1;
+                }
+
+            var exchange = 'topic_logs';
+            var args = process.argv.slice(2);
+            var key = (args.length > 0) ? args[0] : 'anonymous.info';
+            var msg = args.slice(1).join(' ') || 'Hello World!';
+
+//assertExchange = topic
+            channel.assertExchange(exchange, 'topic', {
+                durable: false
+            });
+            channel.publish(exchange, key, Buffer.from(msg));
+            console.log(" [x] Sent %s:'%s'", key, msg);
+        });
+
+        setTimeout(function() { 
+            connection.close(); 
+            process.exit(0) 
+        }, 500);
+        });
+
+----------------------------------------
+receive_logs_topic.js
+
+//declare dependency 
+        var amqp = require('amqplib/callback_api');
+
+        var args = process.argv.slice(2);
+
+        if (args.length == 0) {
+            console.log("Usage: receive_logs_topic.js <facility>.<severity>");
+            process.exit(1);
+        }
+
+//create connect
+        amqp.connect('amqp://localhost', function(error0, connection) {
+                if (error0) {
+                    throw error0;
+                }
+
+//create channel                
+        connection.createChannel(function(error1, channel) {
+                if (error1) {
+                    throw error1;
+                }
+                var exchange = 'topic_logs';
+//assert Exchange = topic
+                channel.assertExchange(exchange, 'topic', {
+                    durable: false
+                });
+
+                channel.assertQueue('', {
+                    exclusive: true
+                }, function(error2, q) {
+                    if (error2) {
+                        throw error2;
+                }
+
+                console.log(' [*] Waiting for logs. To exit press CTRL+C');
+//bind with key
+                args.forEach(function(key) {
+                    channel.bindQueue(q.queue, exchange, key);
+                });
+//consume 
+                channel.consume(q.queue, function(msg) {
+                    console.log(" [x] %s:'%s'", msg.fields.routingKey, msg.content.toString());
+                }, {
+                    noAck: true
+                });
+            });
+            });
+        });     
+
+================================
+//To receive all the logs:
+    ./receive_logs_topic.js "#"
+
+//To receive all logs from the facility "kern":
+    ./receive_logs_topic.js "kern.*"
+
+//only about "critical" logs:
+    ./receive_logs_topic.js "*.critical"
+
+//To create multiple bindings:
+    ./receive_logs_topic.js "kern.*" "*.critical"
+
+//emit a log with a routing key "kern.critical"
+    ./emit_log_topic.js "kern.critical" "A critical kernel error"

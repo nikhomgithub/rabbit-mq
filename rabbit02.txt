@@ -1,0 +1,110 @@
+Work Queues   one-to-one with storage/forward/ack system 
+Distributing tasks among workers (the
+----------------------
+new_task.js (send)
+
+//declare dependency
+        var amqp = require('amqplib/callback_api');
+
+//create connect
+        amqp.connect('amqp://localhost', function(error0, connection) {
+                if (error0) {
+                        throw error0;
+                }
+//create channel                
+                connection.createChannel(function(error1, channel) {
+                        if (error1) {
+                                throw error1;
+                        }
+
+                var queue = 'task_queue';
+                
+                //allow arbitrary messages to be sent from the command line
+                var msg = process.argv.slice(2).join(' ') || "Hello World!";  
+//assert queue
+//messages aren't lost: both queue and messages must be durable, but publisher confirms more certain
+                channel.assertQueue(queue, {
+                        durable: true
+                });
+                
+                channel.sendToQueue(queue, Buffer.from(msg), {
+                        persistent: true
+                });
+
+                console.log(" [x] Sent '%s'", msg);
+                });
+
+                setTimeout(function() {
+                        connection.close();
+                        process.exit(0)
+                }, 500);
+        });
+
+--------------------------
+worker.js(receive)
+        var amqp = require('amqplib/callback_api');
+
+//create connect
+        amqp.connect('amqp://localhost', function(error0, connection) {
+                if (error0) {
+                        throw error0;
+                }
+
+//create connection        
+        connection.createChannel(function(error1, channel) {
+                if (error1) {
+                        throw error1;
+                }
+                
+        var queue = 'task_queue';
+
+//assert queue
+//messages aren't lost: both queue and messages must be durable, but publisher confirms more certain
+        channel.assertQueue(queue, {
+                durable: true
+        });
+
+//Don't dispatch a new message to a worker until it has processed and acknowledged the previous one                
+//Instead, it will dispatch it to the next worker that is not still busy
+        channel.prefetch(1);
+                
+        console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
+
+//consume                
+        channel.consume(queue, function(msg) {
+                var secs = msg.content.toString().split('.').length - 1;
+                console.log(" [x] Received %s", msg.content.toString());
+                        
+                setTimeout(function() {
+                        console.log(" [x] Done");
+                        channel.ack(msg);
+                }, secs * 1000);
+        }, {
+// manual acknowledgment mode,  RabbitMQ is free to delete froe queue
+                noAck: false
+        });
+        });
+        });
+
+-----------------------------
+# shell 3
+./new_task.js First message.
+./new_task.js Second message..
+./new_task.js Third message...
+./new_task.js Fourth message....
+./new_task.js Fifth message.....
+
+
+//distributed by round-robin
+
+# shell 1
+./worker.js
+# => [*] Waiting for messages. To exit press CTRL+C
+# => [x] Received 'First message.'
+# => [x] Received 'Third message...'
+# => [x] Received 'Fifth message.....'
+# shell 2
+./worker.js
+# => [*] Waiting for messages. To exit press CTRL+C
+# => [x] Received 'Second message..'
+# => [x] Received 'Fourth message....'

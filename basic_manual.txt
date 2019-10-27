@@ -1,0 +1,347 @@
+https://www.youtube.com/watch?v=XjuiZM7JzPw
+===========================================
+Normal MQ concept 
+
+Publish  ==> M5,M4,M3,M2,M1 ==> Consumer
+                   /\             |
+                    |_____________|
+                          Ack
+
+RabbitMQ Concept use AMQP protocal with Pub/Sub concept
+-------------------------------------------------------
+
+- Fanout (Exchange bind to all queue)
+                                ---> binding ===> M5,M4,M3,M2,M1 ==> ConsumerA (sub)
+                               / 
+Publish (pub)  ===>  Exchange -----> binding ===> M5,M4,M3,M2,M1 ==> ConsumerB (sub)
+                               \
+                                ---> binding ===> M5,M4,M3,M2,M1 ==> ConsumerC (sub)
+
+
+- Direct (exchange when routing keys === binding keys)         
+                                ---> binding ===> M5,M4,M3,M2,M1 ==> ConsumerA (sub)
+                               / (bind keys ="a")                
+Publish (pub)  ===>  Exchange -----> binding ===> M5,M4,M3,M2,M1 ==> ConsumerB (sub)
+            routing keys ="b"  \  
+                                ---> binding ===> M5,M4,M3,M2,M1 ==> ConsumerC (sub) <"b"="b"> 
+                                  (bind keys ="b")                   --------
+
+
+- Topic Exchange   (* 1 or more,  # 0 or more)
+            routing keys "shape"       === "shape" or "shape.#" 
+                         "shape.color" === "shape.#" or "shape.*"  
+
+                                ---> binding ===> M5,M4,M3,M2,M1 ==> ConsumerA (sub)
+                               / (bind keys ="shape.*")  
+Publish (pub)  ===>  Exchange -----> binding ===> M5,M4,M3,M2,M1 ==> ConsumerB (sub)
+                               \ (bind keys ="shape.#")  
+                                ---> binding ===> M5,M4,M3,M2,M1 ==> ConsumerC (sub)
+                                 (bind keys ="shape")
+
+===========================================
+https://www.youtube.com/watch?v=Dg6k4PR-a6w
+
+Store and Forward Queues  
+    publisher ==> Exchange ==> M5,M4,M3,M2,M1                       //Store M1-M5 in memory
+                               M5,M4,M3,M2,M1                       //Publisher disconnect
+                               M5,M4,M3,M2    ===M1=> Consumer      //Forward M1 to Consumer  
+
+Config Queues 
+    Name
+    Durability = yes      (queue service if server reboot) 
+    Auto delete = no
+    Message TTL
+    Auto expire
+    Max length
+    Dead letter exchange
+    Dead letter routing keys
+    Arguments: 
+
+Create Publisher with client library
+    //Set connection info  (hostname,user,password)
+    //Create connection    (instantiate)
+    //Create channel       (channel can be more than 1)
+    //publish Message      (exchange="",queue_name,header,message as byte)
+    //channel close
+    //connection close
+
+check message in queue    
+    Exchange    : (AMQP default)  //amq.direct(default) == exact match of routing keys & binding keys, , 
+                  amq.fanout, amg.header, amg.match, 
+                  amq.rabbitmq.log, amq.rabbitmq.trace, amq.topic
+    Routing Key : queue_name
+    Redelivered :
+    Properties  :
+    Payload     : message.....
+
+Consumer
+    //set connection info  (hostname,user,password)
+    //create connection    (instantiate)
+    //create channel
+    //consume (sub)        (queue_name, while (deliever!=null), Ack to queue, check message-id for redelivery)
+    //channel close
+    //connection close
+
+===============================
+===============================
+Node.js and RabbitMQ setup   https://github.com/didil/async-microservices-demo
+we can use CloudAMQP         https://www.manifold.co/services/cloudamqp
+
+
+Client  ==post==> WebService  
+        <=reqId== Webservice ==> CloudAMQP ==> ProcessorService    
+                  WebService CloudAMQP ProcessorService
+
+
+
+
+
+RabbitMQ queues configuration for CloudAMQP
+
+
+require('dotenv').config();
+
+const amqp = require('amqplib');
+
+      // RabbitMQ connection string
+const messageQueueConnectionString = process.env.CLOUDAMQP_URL;
+
+async function setup() {
+      // console.log("Setting up RabbitMQ Exchanges/Queues");
+      // connect to RabbitMQ Instance
+  let connection = await amqp.connect(messageQueueConnectionString);
+
+      // create a channel
+  let channel = await connection.createChannel();
+
+      // create exchange
+  await channel.assertExchange("processing", "direct", { durable: true });
+
+      // create queues
+  await channel.assertQueue("processing.requests", { durable: true });
+  await channel.assertQueue("processing.results", { durable: true });
+
+      // bind queues
+  await channel.bindQueue("processing.requests","processing", "request");
+  await channel.bindQueue("processing.results","processing", "result");
+
+     // console.log("Setup DONE");
+  process.exit();
+}
+
+setup();
+
+-----------------------------
+WebService Code
+ - handle POST rq to /api/v1/processData
+ - assign requestId
+ - res requestId
+ - publish rq to RabbitMQ
+ - listen result to RabbitMQ
+
+//declare dependency
+        const path  = require('path');
+        require('dotenv').config({path:  path.resolve(process.cwd(), '../.env')});
+
+        const express = require('express');
+        const app = express();
+        const http = require('http');
+        const bodyParser = require('body-parser');
+        const amqp = require('amqplib');
+
+            // Middleware
+            app.use(bodyParser.json());
+
+            // simulate request ids
+            let lastRequestId = 1;
+
+            // RabbitMQ connection string
+            const messageQueueConnectionString = process.env.CLOUDAMQP_URL;
+
+// Start the server
+        const PORT = 3000;
+        server = http.createServer(app);
+        server.listen(PORT, "localhost", function (err) {
+        if (err) {
+            console.error(err);
+        } else {
+            console.info("Listening on port %s.", PORT);
+        }
+        });
+
+// handle the request
+        app.post('/api/v1/processData', async function (req, res) {
+        // save request id and increment
+        let requestId = lastRequestId;
+        lastRequestId++;
+
+// connect to Rabbit MQ and create a channel
+        let connection = await amqp.connect(messageQueueConnectionString);
+        let channel = await connection.createConfirmChannel();
+
+// publish the data to Rabbit MQ
+        let requestData = req.body.data;
+        console.log("Published a request message, requestId:", requestId);
+        await publishToChannel(channel, { routingKey: "request", exchangeName: "processing", data: { requestId, requestData } });
+
+// response with requestId 
+        res.send({ requestId })
+        });
+
+
+// utility function publishToChannel
+            function publishToChannel(channel, { routingKey, exchangeName, data }) {
+            return new Promise((resolve, reject) => {
+                channel.publish(exchangeName, routingKey, Buffer.from(JSON.stringify(data), 'utf-8'), { persistent: true }, function (err, ok) {
+                if (err) {
+                    return reject(err);
+                }
+
+                resolve();
+                })
+            });
+            }
+
+// listen for results on RabbitMQ
+        listenForResults();
+
+// utility function listenForResults()
+            async function listenForResults() {
+            // connect to Rabbit MQ
+            let connection = await amqp.connect(messageQueueConnectionString);
+
+            // create a channel and prefetch 1 message at a time
+            let channel = await connection.createChannel();
+            await channel.prefetch(1);
+
+            // start consuming messages
+            await consume({ connection, channel });
+            }
+
+// utility function consume()
+            function consume({ connection, channel, resultsChannel }) {
+            return new Promise((resolve, reject) => {
+                channel.consume("processing.results", async function (msg) {
+                // parse message
+                let msgBody = msg.content.toString();
+                let data = JSON.parse(msgBody);
+                let requestId = data.requestId;
+                let processingResults = data.processingResults;
+                console.log("Received a result message, requestId:", requestId, "processingResults:", processingResults);
+
+                // acknowledge message as received
+                await channel.ack(msg);
+                });
+
+                // handle connection closed
+                connection.on("close", (err) => {
+                return reject(err);
+                });
+
+                // handle errors
+                connection.on("error", (err) => {
+                return reject(err);
+                });
+            });
+            }
+
+-----------------------------
+ProcessorService Code
+
+//declare dependency
+        const path  = require('path');
+        require('dotenv').config({path:  path.resolve(process.cwd(), '../.env')});
+
+        const amqp = require('amqplib');
+
+        // RabbitMQ connection string
+        const messageQueueConnectionString = process.env.CLOUDAMQP_URL;
+
+//listenForMessages();
+        listenForMessages();
+
+// utility function listenForMessages()
+        async function listenForMessages() {
+        // connect to Rabbit MQ
+        let connection = await amqp.connect(messageQueueConnectionString);
+
+    // create a channel and prefetch 1 message at a time
+        let channel = await connection.createChannel();
+        await channel.prefetch(1);
+
+    // create a second channel to send back the results
+        let resultsChannel = await connection.createConfirmChannel();
+
+    // start consuming messages
+        await consume({ connection, channel, resultsChannel });
+        }
+
+//utility function consume()
+        function consume({ connection, channel, resultsChannel }) {
+        return new Promise((resolve, reject) => {
+    
+    //consume "processing.requests"
+            channel.consume("processing.requests", async function (msg) {
+            // parse message
+            let msgBody = msg.content.toString();
+            let data = JSON.parse(msgBody);
+            let requestId = data.requestId;
+            let requestData = data.requestData;
+            console.log("Received a request message, requestId:", requestId);
+
+            // process data
+            let processingResults = await processMessage(requestData);
+
+    // publish results to channel
+            await publishToChannel(resultsChannel, {
+                exchangeName: "processing",
+                routingKey: "result",
+                data: { requestId, processingResults }
+            });
+            console.log("Published results for requestId:", requestId);
+
+    // acknowledge message as processed successfully
+            await channel.ack(msg);
+            });
+
+            // handle connection closed
+            connection.on("close", (err) => {
+            return reject(err);
+            });
+
+            // handle errors
+            connection.on("error", (err) => {
+            return reject(err);
+            });
+        });
+        }
+
+// utility function to publishToChannel()
+        function publishToChannel(channel, { routingKey, exchangeName, data }) {
+        return new Promise((resolve, reject) => {
+            channel.publish(exchangeName, routingKey, Buffer.from(JSON.stringify(data), 'utf-8'), { persistent: true }, function (err, ok) {
+            if (err) {
+                return reject(err);
+            }
+
+            resolve();
+            })
+        });
+        }
+
+
+Exploring the results
+$ *cd web-service
+$ node web-service.js
+*Listening on port 3000.
+*// From a different terminal
+*$ *curl --header "Content-Type: application/json" \
+  --request POST \
+  --data '{"data":"my-data"}' \
+  [http://localhost:3000/api/v1/processData](http://localhost:3000/api/v1/processData)*
+{"requestId":1}
+$ *curl --header "Content-Type: application/json" \
+  --request POST \
+  --data '{"data":"more-data"}' \
+  [http://localhost:3000/api/v1/processData](http://localhost:3000/api/v1/processData)*
+{"requestId":2}
